@@ -12,6 +12,13 @@ import { DesignationModule } from './designation/designation.module';
 
 import { EmployeeModule } from './employee/employee.module';
 
+import { LeaveAllocationsModule } from './leave-management/leave-allocations/leave-allocations.module';
+import { LeaveApplicationsModule } from './leave-management/leave-applications/leave-applications.module';
+import { LeaveBalanceModule } from './leave-management/leave-balance/leave-balance.module';
+import { LeaveLedgerModule } from './leave-management/leave-ledger/leave-ledger.module';
+import { LeavePeriodsModule } from './leave-management/leave-periods/leave-periods.module';
+import { LeaveTypesModule } from './leave-management/leave-types/leave-types.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -21,6 +28,13 @@ import { EmployeeModule } from './employee/employee.module';
     DepartmentModule,
     DesignationModule,
     EmployeeModule,
+      LeaveAllocationsModule,
+    LeaveApplicationsModule,
+    LeaveBalanceModule,
+    LeaveLedgerModule,
+    LeavePeriodsModule,
+    LeaveTypesModule,
+
   ],
 
   controllers: [AppController],

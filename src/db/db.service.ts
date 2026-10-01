@@ -5,6 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+
 import { Pool, PoolClient, QueryResult, types } from 'pg';
 
 // PostgreSQL DATE (OID 1082) should remain a date-only string.
