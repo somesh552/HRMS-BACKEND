@@ -1,4 +1,8 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+} from '@nestjs/common';
+
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
@@ -7,7 +11,10 @@ export class MailService {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: process.env.MAIL_HOST,
+      port: Number(process.env.MAIL_PORT),
+      secure: false,
+
       auth: {
         user: process.env.MAIL_USER,
         pass: process.env.MAIL_PASSWORD,
@@ -15,6 +22,9 @@ export class MailService {
     });
   }
 
+  // =========================================================
+  // 1. EMPLOYEE CREATED - SEND WELCOME EMAIL
+  // =========================================================
   async sendEmployeeWelcomeMail(
     employeeEmail: string,
     employeeName: string,
@@ -48,8 +58,8 @@ export class MailService {
             </p>
 
             <p>
-              We are pleased to inform you that your employee registration
-              has been successfully completed.
+              We are pleased to inform you that your employee
+              registration has been successfully completed.
             </p>
 
             <p>
@@ -121,8 +131,9 @@ export class MailService {
             </table>
 
             <div style="margin-top: 25px;">
+
               <a
-                href="${process.env.HRMS_LOGIN_URL}"
+                href="${process.env.HRMS_LOGIN_URL || '#'}"
                 style="
                   display: inline-block;
                   padding: 12px 22px;
@@ -135,11 +146,12 @@ export class MailService {
               >
                 Login to HRMS
               </a>
+
             </div>
 
             <p style="margin-top: 25px;">
-              For security reasons, please change your temporary password
-              after your first login.
+              For security reasons, please change your temporary
+              password after your first login.
             </p>
 
             <p>
@@ -165,16 +177,181 @@ export class MailService {
         `,
       });
 
+      console.log(
+        `Welcome email sent successfully to ${employeeEmail}`,
+      );
+
       return {
         success: true,
         message: 'Welcome email sent successfully',
       };
-
     } catch (error) {
-      console.error('Email sending failed:', error);
+      console.error(
+        'Welcome email sending failed:',
+        error,
+      );
 
       throw new InternalServerErrorException(
         'Employee account created, but welcome email could not be sent',
+      );
+    }
+  }
+
+  // =========================================================
+  // 2. TEST GMAIL
+  // =========================================================
+  async sendTestMail(to: string) {
+    try {
+      await this.transporter.sendMail({
+        from: `"HR Department" <${process.env.MAIL_USER}>`,
+        to,
+
+        subject: 'HRMS Test Email',
+
+        text: 'Gmail email service is working successfully.',
+      });
+
+      console.log(
+        `Test email sent successfully to ${to}`,
+      );
+
+      return {
+        success: true,
+        message: 'Test email sent successfully',
+      };
+    } catch (error) {
+      console.error(
+        'Test email sending failed:',
+        error,
+      );
+
+      throw new InternalServerErrorException(
+        'Failed to send test email',
+      );
+    }
+  }
+
+  // =========================================================
+  // 3. RESIGNATION COMPLETED - SEND EMAIL TO HR
+  // =========================================================
+  async sendResignationMail(
+    to: string,
+    employeeName: string,
+    employeeId: string,
+  ) {
+    try {
+      await this.transporter.sendMail({
+        from: `"HR Department" <${process.env.MAIL_USER}>`,
+
+        to,
+
+        subject: 'Employee Resignation Completed',
+
+        html: `
+          <div style="
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: auto;
+            padding: 30px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background-color: #ffffff;
+          ">
+
+            <h2 style="color: #2563eb;">
+              Employee Resignation Completed
+            </h2>
+
+            <p>
+              Dear HR Team,
+            </p>
+
+            <p>
+              The resignation process for the following employee
+              has been completed successfully.
+            </p>
+
+            <table style="
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            ">
+
+              <tr>
+
+                <td style="
+                  padding: 12px;
+                  border: 1px solid #ddd;
+                  background: #f8fafc;
+                ">
+                  <strong>Employee Name</strong>
+                </td>
+
+                <td style="
+                  padding: 12px;
+                  border: 1px solid #ddd;
+                ">
+                  ${employeeName}
+                </td>
+
+              </tr>
+
+              <tr>
+
+                <td style="
+                  padding: 12px;
+                  border: 1px solid #ddd;
+                  background: #f8fafc;
+                ">
+                  <strong>Employee ID</strong>
+                </td>
+
+                <td style="
+                  padding: 12px;
+                  border: 1px solid #ddd;
+                ">
+                  ${employeeId}
+                </td>
+
+              </tr>
+
+            </table>
+
+            <p style="margin-top: 25px;">
+              The resignation details have been recorded
+              in the HRMS.
+            </p>
+
+            <p>
+              Please check the HRMS system for complete details.
+            </p>
+
+            <p style="margin-top: 25px;">
+              Best regards,<br>
+              <strong>HR Department</strong><br>
+              ${process.env.COMPANY_NAME || 'Our Company'}
+            </p>
+
+          </div>
+        `,
+      });
+
+      console.log(
+        `Resignation email sent successfully to ${to}`,
+      );
+
+      return {
+        success: true,
+        message: 'Resignation email sent successfully',
+      };
+    } catch (error) {
+      console.error(
+        'Resignation email sending failed:',
+        error,
+      );
+
+      throw new InternalServerErrorException(
+        'Resignation completed, but email could not be sent',
       );
     }
   }

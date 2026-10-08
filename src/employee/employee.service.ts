@@ -221,6 +221,38 @@ export class EmployeeService {
 
       const employeeId = employeeResult.rows[0].id;
 
+
+
+      // ==========================================
+      // CREATE SHARED LEAVE ALLOCATION
+      // ==========================================
+
+      await client.query(
+        `
+  INSERT INTO leave_allocations (
+    employee_id,
+    leave_type_id,
+    leave_period_id,
+    total_leaves_allocated,
+    carry_forward_leaves,
+    used_leaves,
+    remaining_leaves
+  )
+  VALUES (
+    $1,
+    NULL,
+    $2,
+    21,
+    0,
+    0,
+    21
+  )
+  `,
+        [
+          employeeId,
+          1, // current leave period
+        ],
+      );
       // ---------------------------
       // Personal information
       // ---------------------------
@@ -481,10 +513,10 @@ export class EmployeeService {
   // UPDATE EMPLOYEE
   // ===========================
   async update(
-  id: string,
-  payload: any,
-  files: EmployeeUploadedFiles,
-) {
+    id: string,
+    payload: any,
+    files: EmployeeUploadedFiles,
+  ) {
     const client = await this.dbService.getClient();
 
     try {
@@ -752,58 +784,58 @@ export class EmployeeService {
           currentAddress,
         );
       }
-// ===========================
-// UPDATE DOCUMENTS
-// ===========================
+      // ===========================
+      // UPDATE DOCUMENTS
+      // ===========================
 
-const documents = payload?.documentsMetadata ?? [];
+      const documents = payload?.documentsMetadata ?? [];
 
-if (documents.length > 0) {
-  validateDocumentMetadata(documents);
-  validateSingleDocumentDuplicates(documents);
+      if (documents.length > 0) {
+        validateDocumentMetadata(documents);
+        validateSingleDocumentDuplicates(documents);
 
-  const matchedFiles = matchDocumentFiles(
-    documents,
-    files ?? {},
-  );
+        const matchedFiles = matchDocumentFiles(
+          documents,
+          files ?? {},
+        );
 
-  for (const { document, file } of matchedFiles) {
+        for (const { document, file } of matchedFiles) {
 
-    // No new file selected
-    // Keep existing file
-    if (!file) {
-      continue;
-    }
+          // No new file selected
+          // Keep existing file
+          if (!file) {
+            continue;
+          }
 
-    // New file selected
-    validateUploadedFile(
-      file,
-      document.documentKey,
-    );
+          // New file selected
+          validateUploadedFile(
+            file,
+            document.documentKey,
+          );
 
-    const definition =
-      DOCUMENT_DEFINITIONS[
-        document.documentKey as DocumentKey
-      ];
+          const definition =
+            DOCUMENT_DEFINITIONS[
+            document.documentKey as DocumentKey
+            ];
 
-    // Remove old document
-    await client.query(
-      `
+          // Remove old document
+          await client.query(
+            `
       DELETE FROM employee_documents
       WHERE employee_id = $1
         AND document_name = $2
         AND document_type = $3;
       `,
-      [
-        id,
-        definition.name,
-        definition.type,
-      ],
-    );
+            [
+              id,
+              definition.name,
+              definition.type,
+            ],
+          );
 
-    // Save new file
-    await client.query(
-      `
+          // Save new file
+          await client.query(
+            `
       INSERT INTO employee_documents (
         employee_id,
         document_name,
@@ -814,17 +846,17 @@ if (documents.length > 0) {
       )
       VALUES ($1, $2, $3, $4, $5, $6);
       `,
-      [
-        id,
-        definition.name,
-        definition.type,
-        file.originalname,
-        file.mimetype,
-        file.buffer,
-      ],
-    );
-  }
-}
+            [
+              id,
+              definition.name,
+              definition.type,
+              file.originalname,
+              file.mimetype,
+              file.buffer,
+            ],
+          );
+        }
+      }
       // ===========================
       // GET UPDATED EMPLOYEE
       // ===========================
@@ -1012,28 +1044,28 @@ if (documents.length > 0) {
   // NORMALIZE EMPLOYEE DATA
   // ===========================
   // ===========================
-// MANAGER ID NORMALIZATION
-// ===========================
+  // MANAGER ID NORMALIZATION
+  // ===========================
 
-private normalizeManagerId(value: unknown): number | null {
-  if (
-    value === null ||
-    value === undefined ||
-    value === ''
-  ) {
-    return null;
+  private normalizeManagerId(value: unknown): number | null {
+    if (
+      value === null ||
+      value === undefined ||
+      value === ''
+    ) {
+      return null;
+    }
+
+    const managerId = Number(value);
+
+    if (Number.isNaN(managerId)) {
+      throw new BadRequestException(
+        'Invalid Reporting Manager',
+      );
+    }
+
+    return managerId;
   }
-
-  const managerId = Number(value);
-
-  if (Number.isNaN(managerId)) {
-    throw new BadRequestException(
-      'Invalid Reporting Manager',
-    );
-  }
-
-  return managerId;
-}
 
   private normalizeEmployeeData(employee: any, existing: any = {}) {
     const source = employee ?? {};
