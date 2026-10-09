@@ -1,4 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import {
+    Injectable,
+    ConflictException,
+} from '@nestjs/common';
 import { DbService } from '../../db/db.service';
 
 @Injectable()
@@ -142,81 +145,76 @@ export class LeaveApplicationsService {
             total_leave_days =
                 total_leave_days - 0.5;
         }
-
         // 6.5 Check overlapping leave
+        // Prevent overlapping Open or Approved leave applications
+        // for the same employee.
+
         const overlapResult = await this.db.query(
             `
-    SELECT id
+    SELECT id, from_date, to_date, status
     FROM leave_applications
     WHERE employee_id = $1
       AND status IN ('Open', 'Approved')
       AND from_date <= $3
       AND to_date >= $2
+    LIMIT 1
     `,
-            [
-                employee_id,
-                from_date,
-                to_date,
-            ],
+            [employee_id, from_date, to_date],
         );
 
         if (overlapResult.rows.length > 0) {
+            const existingLeave = overlapResult.rows[0];
+
+            throw new ConflictException({
+                message: 'You already have a leave application for overlapping dates.',
+                existing_leave_id: existingLeave.id,
+                existing_from_date: existingLeave.from_date,
+                existing_to_date: existingLeave.to_date,
+                existing_status: existingLeave.status,
+            });
+        }
+
+        // 6.6 Check shared leave balance
+        // All leave types use the same 21-day allocation
+
+        const allocationResult = await this.db.query(
+            `
+  SELECT *
+  FROM leave_allocations
+  WHERE employee_id = $1
+    AND remaining_leaves IS NOT NULL
+  ORDER BY leave_period_id DESC
+  LIMIT 1
+  `,
+            [employee_id],
+        );
+
+        const allocation = allocationResult.rows[0];
+
+        if (!allocation) {
             throw new Error(
-                'Leave application overlaps with an existing leave',
+                'Shared leave allocation not found for this employee',
             );
         }
 
+        const remainingLeaves = Number(allocation.remaining_leaves);
+        const requestedDays = Number(total_leave_days);
 
-        // 6.6 Check shared leave balance
-// All leave types use the same 21-day allocation
+        let is_lwp = false;
 
-const allocationResult = await this.db.query(
-    `
-    SELECT *
-    FROM leave_allocations
-    WHERE employee_id = $1
-      AND leave_period_id = $2
-      AND leave_type_id = $3
-    LIMIT 1
-    `,
-    [
-        employee_id,
-        1, // current leave period
-        leave_type_id,
-    ],
-);
+        if (requestedDays > remainingLeaves) {
+            is_lwp = true;
+        }
 
-const allocation = allocationResult.rows[0];
-
-if (!allocation) {
-    throw new Error(
-        'Leave allocation not found for this employee',
-    );
-}
-
-const remainingLeaves = Number(
-    allocation.remaining_leaves,
-);
-
-const requestedDays = Number(
-    total_leave_days,
-);
-
-console.log("SHARED LEAVE BALANCE");
-console.log("Employee ID:", employee_id);
-console.log("Remaining Leaves:", remainingLeaves);
-console.log("Requested Days:", requestedDays);
-
-let is_lwp = false;
-
-if (requestedDays > remainingLeaves) {
-    is_lwp = true;
-}
-
-console.log("FINAL is_lwp:", is_lwp);
-// 8. Create leave application
-const result = await this.db.query(
-    `
+        console.log('SHARED LEAVE BALANCE');
+        console.log('Employee ID:', employee_id);
+        console.log('Allocation ID:', allocation.id);
+        console.log('Remaining Leaves:', remainingLeaves);
+        console.log('Requested Days:', requestedDays);
+        console.log('FINAL is_lwp:', is_lwp);
+        // 8. Create leave application
+        const result = await this.db.query(
+            `
     INSERT INTO leave_applications (
         employee_id,
         leave_type_id,
@@ -243,27 +241,27 @@ const result = await this.db.query(
     )
     RETURNING *
     `,
-    [
-        employee_id,
-        leave_type_id,
-        from_date,
-        to_date,
-        total_leave_days,
-        is_half_day,
-        half_day_date,
-        reason,
-        is_lwp,
-    ],
-);
+            [
+                employee_id,
+                leave_type_id,
+                from_date,
+                to_date,
+                total_leave_days,
+                is_half_day,
+                half_day_date,
+                reason,
+                is_lwp,
+            ],
+        );
 
-// Return newly created leave application
-return result.rows[0];
-}
+        // Return newly created leave application
+        return result.rows[0];
+    }
 
 
-  async findAll() {
-    const result = await this.db.query(
-        `
+    async findAll() {
+        const result = await this.db.query(
+            `
         SELECT
             la.id,
             la.employee_id,
@@ -301,10 +299,10 @@ return result.rows[0];
 
         ORDER BY la.id DESC
         `,
-    );
+        );
 
-    return result.rows;
-}
+        return result.rows;
+    }
     async findOne(id: number) {
         const result = await this.db.query(
             `
@@ -378,83 +376,74 @@ return result.rows[0];
     }
 
 
-async approve(id: number, hrApprovedBy: number) {
-    // 1. Get leave application
-    const applicationResult = await this.db.query(
-        `
+    async approve(id: number, hrApprovedBy: number) {
+        // 1. Get leave application
+        const applicationResult = await this.db.query(
+            `
         SELECT *
         FROM leave_applications
         WHERE id = $1
         `,
-        [id],
-    );
-
-    const application = applicationResult.rows[0];
-
-    if (!application) {
-        throw new Error('Leave application not found');
-    }
-
-    // 2. Only Open applications can be approved
-    if (application.status !== 'Open') {
-        throw new Error(
-            `Leave application is already ${application.status}`,
+            [id],
         );
-    }
 
-    // 3. Get SHARED leave allocation
-    // All leave types use the same 21-day balance
-   const allocationResult = await this.db.query(
-    `
-    SELECT *
-    FROM leave_allocations
-    WHERE employee_id = $1
-      AND leave_period_id = $2
-      AND leave_type_id = $3
-    LIMIT 1
-    `,
-    [
-        application.employee_id,
-        1,
-        application.leave_type_id,
-    ],
-);
+        const application = applicationResult.rows[0];
 
-    const allocation = allocationResult.rows[0];
+        if (!application) {
+            throw new Error('Leave application not found');
+        }
 
-    if (!allocation) {
-        throw new Error(
-            'Leave allocation not found for this employee',
-        );
-    }
+        // 2. Only Open applications can be approved
+        if (application.status !== 'Open') {
+            throw new Error(
+                `Leave application is already ${application.status}`,
+            );
+        }
 
-    const remainingLeaves = Number(
-        allocation.remaining_leaves,
-    );
-
-    const requestedDays = Number(
-        application.total_leave_days,
-    );
-
-    // 4. Check balance
-    if (requestedDays > remainingLeaves) {
-        await this.db.query(
+        // 3. Get SHARED leave allocation
+        // All leave types use the same 21-day balance
+        // 3. Get the employee's shared leave allocation
+        const allocationResult = await this.db.query(
             `
+  SELECT *
+  FROM leave_allocations
+  WHERE employee_id = $1
+    AND leave_period_id = 1
+    AND remaining_leaves IS NOT NULL
+  LIMIT 1
+  `,
+            [application.employee_id],
+        );
+
+        const allocation = allocationResult.rows[0];
+
+        if (!allocation) {
+            throw new Error(
+                'Shared leave allocation not found for this employee',
+            );
+        }
+
+        const remainingLeaves = Number(allocation.remaining_leaves);
+        const requestedDays = Number(application.total_leave_days);
+        // 4. Check balance
+        if (requestedDays > remainingLeaves) {
+            await this.db.query(
+                `
             UPDATE leave_applications
             SET is_lwp = true
             WHERE id = $1
             `,
-            [id],
-        );
+                [id],
+            );
 
-        throw new Error(
-            `Insufficient leave balance. Available: ${remainingLeaves}, Requested: ${requestedDays}. Leave marked as LWP.`,
-        );
-    }
+            throw new Error(
+                `Insufficient leave balance. Available: ${remainingLeaves}, Requested: ${requestedDays}. Leave marked as LWP.`,
+            );
+        }
 
-    // 5. Approve leave
-    const approvedResult = await this.db.query(
-        `
+        // 5. Approve leave
+        const approvedResult = await this.db.query(
+            `
         UPDATE leave_applications
         SET
             status = 'Approved',
@@ -462,43 +451,39 @@ async approve(id: number, hrApprovedBy: number) {
         WHERE id = $2
         RETURNING *
         `,
-        [hrApprovedBy, id],
-    );
-
-    // 6. Deduct from SHARED 21-day balance
-   const allocationUpdateResult = await this.db.query(
-    `
-    UPDATE leave_allocations
-    SET
-        used_leaves = used_leaves + $1,
-        remaining_leaves =
-            total_leaves_allocated
-            + carry_forward_leaves
-            - (used_leaves + $1)
-    WHERE employee_id = $2
-      AND leave_period_id = $3
-      AND leave_type_id = $4
-    RETURNING *
-    `,
-    [
-        application.total_leave_days,
-        application.employee_id,
-        1,
-        application.leave_type_id,
-    ],
-);
-    const updatedAllocation =
-        allocationUpdateResult.rows[0];
-
-    if (!updatedAllocation) {
-        throw new Error(
-            'Leave allocation could not be updated',
+            [hrApprovedBy, id],
         );
-    }
 
-    // 7. Create Leave Ledger entry
-    await this.db.query(
-        `
+        // 6. Deduct from SHARED 21-day balance
+        // 6. Deduct approved leave from the shared balance
+        const allocationUpdateResult = await this.db.query(
+            `
+  UPDATE leave_allocations
+  SET
+    used_leaves = used_leaves + $1,
+    remaining_leaves = remaining_leaves - $1
+  WHERE id = $2
+    AND remaining_leaves >= $1
+  RETURNING *
+  `,
+            [
+                requestedDays,
+                allocation.id,
+            ],
+        );
+
+
+        const updatedAllocation = allocationUpdateResult.rows[0];
+
+        if (!updatedAllocation) {
+            throw new Error(
+                'Shared leave allocation could not be updated',
+            );
+        }
+
+        // 7. Create Leave Ledger entry
+        await this.db.query(
+            `
         INSERT INTO leave_ledger_entries (
             employee_id,
             leave_type_id,
@@ -522,23 +507,25 @@ async approve(id: number, hrApprovedBy: number) {
             CURRENT_DATE
         )
         `,
-        [
-            application.employee_id,
-            application.leave_type_id,
-            updatedAllocation.leave_period_id,
-            -Number(application.total_leave_days),
-            updatedAllocation.remaining_leaves,
-            application.id,
-        ],
-    );
+            [
+                application.employee_id,
+                application.leave_type_id,
+                updatedAllocation.leave_period_id,
+                -Number(application.total_leave_days),
+                updatedAllocation.remaining_leaves,
+                application.id,
+            ],
+        );
 
-    return approvedResult.rows[0];
-}
+        return approvedResult.rows[0];
+    }
 
 
-async reject(id: number, hrRejectedBy: number) {
-    const result = await this.db.query(
-        `
+
+
+    async reject(id: number, hrRejectedBy: number) {
+        const result = await this.db.query(
+            `
         UPDATE leave_applications
         SET
             status = 'Rejected',
@@ -546,11 +533,11 @@ async reject(id: number, hrRejectedBy: number) {
         WHERE id = $2
         RETURNING *
         `,
-        [hrRejectedBy, id],
-    );
+            [hrRejectedBy, id],
+        );
 
-    return result.rows[0];
-}
+        return result.rows[0];
+    }
 
 
 
@@ -585,6 +572,6 @@ async reject(id: number, hrRejectedBy: number) {
         return result.rows[0];
     }
 
-    
+
 
 }
