@@ -12,7 +12,7 @@ export class MailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
       host: process.env.MAIL_HOST,
-      port: Number(process.env.MAIL_PORT),
+      port: Number(process.env.MAIL_PORT || 587),
       secure: false,
 
       auth: {
@@ -195,6 +195,38 @@ export class MailService {
         'Employee account created, but welcome email could not be sent',
       );
     }
+  }
+  async sendEmployeeCreatedHrMail(
+    employeeName: string,
+    employeeCode: string,
+    employeeEmail: string,
+  ) {
+    const hrEmail = process.env.HR_EMAIL;
+
+    if (!hrEmail) {
+      throw new Error('HR_EMAIL is missing in .env');
+    }
+
+    await this.transporter.sendMail({
+      from: `"HR Department" <${process.env.MAIL_USER}>`,
+      to: hrEmail,
+      subject: 'Employee Created Successfully',
+
+      text: `
+Hello HR Team,
+
+The employee has been created successfully.
+
+Employee Name: ${employeeName}
+Employee ID: ${employeeCode}
+Employee Email: ${employeeEmail}
+
+Regards,
+HR Department
+    `,
+    });
+
+    console.log(`Employee creation email sent to HR: ${hrEmail}`);
   }
 
   // =========================================================

@@ -4,6 +4,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { DbService } from '../db/db.service';
+import { AuthService } from '../auth/auth.service';
+import { MailService } from '../mail/mail.service';
 import { PoolClient } from 'pg';
 import {
   EmployeeUploadedFiles,
@@ -19,7 +21,11 @@ import {
 
 @Injectable()
 export class EmployeeService {
-  constructor(private readonly dbService: DbService) { }
+    constructor(
+      private readonly dbService: DbService,
+      private readonly authService: AuthService,
+      private readonly mailService: MailService,
+    ) { }
 
   // ===========================
   // GET ALL EMPLOYEES
@@ -462,8 +468,30 @@ export class EmployeeService {
 
       await client.query('COMMIT');
 
+      // Create employee login account
+      const employeeAccount =
+        await this.authService.createEmployeeAccount(
+          employeeId,
+          normalizedEmployee.email,
+        );
+
+      // Send welcome email to employee
+      await this.mailService.sendEmployeeWelcomeMail(
+        normalizedEmployee.email,
+        `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
+        employeeResult.rows[0].employee_code,
+        employeeAccount.temporaryPassword,
+      );
+
+      // Send confirmation email to HR
+      await this.mailService.sendEmployeeCreatedHrMail(
+        `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
+        employeeResult.rows[0].employee_code,
+        normalizedEmployee.email,
+      );
+
       return {
-        message: 'Employee registered successfully',
+        message: 'Employee registered successfully. Emails sent.',
         employeeId,
         employeeCode: employeeResult.rows[0].employee_code,
       };
