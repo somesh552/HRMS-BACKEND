@@ -11,14 +11,14 @@ import { DbModule } from './db/db.module';
 import { DesignationModule } from './designation/designation.module';
 
 import { EmployeeModule } from './employee/employee.module';
-import { HolidayListsModule } from './holiday-lists/holiday-lists.module';
+
 import { LeaveAllocationsModule } from './leave-management/leave-allocations/leave-allocations.module';
 import { LeaveApplicationsModule } from './leave-management/leave-applications/leave-applications.module';
 import { LeaveBalanceModule } from './leave-management/leave-balance/leave-balance.module';
 import { LeaveLedgerModule } from './leave-management/leave-ledger/leave-ledger.module';
 import { LeavePeriodsModule } from './leave-management/leave-periods/leave-periods.module';
 import { LeaveTypesModule } from './leave-management/leave-types/leave-types.module';
-
+import { HolidayListsModule } from './holiday-lists/holiday-lists.module';
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -32,9 +32,9 @@ import { LeaveTypesModule } from './leave-management/leave-types/leave-types.mod
     LeaveApplicationsModule,
     LeaveBalanceModule,
     LeaveLedgerModule,
-    HolidayListsModule,
     LeavePeriodsModule,
     LeaveTypesModule,
+    HolidayListsModule,
 
   ],
 

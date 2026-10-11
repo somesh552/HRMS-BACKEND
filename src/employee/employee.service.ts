@@ -155,13 +155,16 @@ export class EmployeeService {
         `
         SELECT id
         FROM designations
-        WHERE id = $1;
+        WHERE id = $1
+          AND department_id = $2;
         `,
-        [normalizedEmployee.designationId],
+        [normalizedEmployee.designationId, normalizedEmployee.departmentId],
       );
 
       if (designationResult.rows.length === 0) {
-        throw new NotFoundException('Designation not found');
+        throw new BadRequestException(
+          'The selected designation does not belong to the selected department',
+        );
       }
 
       // ---------------------------
@@ -589,13 +592,16 @@ export class EmployeeService {
         `
       SELECT id
       FROM designations
-      WHERE id = $1;
+      WHERE id = $1
+        AND department_id = $2;
       `,
-        [normalizedEmployee.designationId],
+        [normalizedEmployee.designationId, normalizedEmployee.departmentId],
       );
 
       if (designationResult.rows.length === 0) {
-        throw new NotFoundException('Designation not found');
+        throw new BadRequestException(
+          'The selected designation does not belong to the selected department',
+        );
       }
 
       // ===========================
@@ -607,14 +613,21 @@ export class EmployeeService {
           `
         SELECT id
         FROM employees
-        WHERE id = $1;
+        WHERE id = $1
+          AND department_id = $2
+          AND designation_id = $3
+          AND LOWER(COALESCE(status, 'Active')) = 'active';
         `,
-          [normalizedEmployee.managerId],
+          [
+            normalizedEmployee.managerId,
+            normalizedEmployee.departmentId,
+            normalizedEmployee.designationId,
+          ],
         );
 
         if (managerResult.rows.length === 0) {
-          throw new NotFoundException(
-            'Reporting Manager not found',
+          throw new BadRequestException(
+            'Reporting Manager must be an active employee with the same department and designation',
           );
         }
 

@@ -408,8 +408,8 @@ export class LeaveApplicationsService {
   SELECT *
   FROM leave_allocations
   WHERE employee_id = $1
-    AND leave_period_id = 1
     AND remaining_leaves IS NOT NULL
+  ORDER BY leave_period_id DESC
   LIMIT 1
   `,
             [application.employee_id],
