@@ -21,11 +21,11 @@ import {
 
 @Injectable()
 export class EmployeeService {
-    constructor(
-      private readonly dbService: DbService,
-      private readonly authService: AuthService,
-      private readonly mailService: MailService,
-    ) { }
+  constructor(
+    private readonly dbService: DbService,
+    private readonly authService: AuthService,
+    private readonly mailService: MailService,
+  ) { }
 
   // ===========================
   // GET ALL EMPLOYEES
@@ -135,6 +135,35 @@ export class EmployeeService {
 
     try {
       await client.query('BEGIN');
+
+      // ==========================================
+      // CHECK DUPLICATE EMAIL BEFORE CREATING EMPLOYEE
+      // ==========================================
+      const normalizedEmail = String(normalizedEmployee.email ?? '').trim();
+
+      if (!normalizedEmail) {
+        throw new BadRequestException('Employee email is required.');
+      }
+
+      const duplicateEmailResult = await client.query(
+        `
+        SELECT email, 'employees' AS source
+        FROM employees
+        WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))
+        UNION ALL
+        SELECT email, 'employee_accounts' AS source
+        FROM employee_accounts
+        WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))
+        LIMIT 1;
+        `,
+        [normalizedEmail],
+      );
+
+      if (duplicateEmailResult.rows.length > 0) {
+        throw new BadRequestException(
+          'Email already exists. Please use another email.',
+        );
+      }
 
       // ---------------------------
       // Validate department
@@ -476,27 +505,59 @@ export class EmployeeService {
         );
 
       // Send welcome email to employee
-      await this.mailService.sendEmployeeWelcomeMail(
-        normalizedEmployee.email,
-        `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
-        employeeResult.rows[0].employee_code,
-        employeeAccount.temporaryPassword,
-      );
+      let welcomeEmailSent = false;
+      let hrEmailSent = false;
+
+      try {
+        await this.mailService.sendEmployeeWelcomeMail(
+          normalizedEmployee.email,
+          `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
+          employeeResult.rows[0].employee_code,
+          employeeAccount.temporaryPassword,
+        );
+
+        welcomeEmailSent = true;
+      } catch (error) {
+        console.error('Welcome email sending failed:', error);
+      }
 
       // Send confirmation email to HR
-      await this.mailService.sendEmployeeCreatedHrMail(
-        `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
-        employeeResult.rows[0].employee_code,
-        normalizedEmployee.email,
-      );
+      try {
+        await this.mailService.sendEmployeeCreatedHrMail(
+          `${normalizedEmployee.firstName} ${normalizedEmployee.lastName}`,
+          employeeResult.rows[0].employee_code,
+          normalizedEmployee.email,
+        );
+
+        hrEmailSent = true;
+      } catch (error) {
+        console.error('HR confirmation email sending failed:', error);
+      }
 
       return {
-        message: 'Employee registered successfully. Emails sent.',
+        message: 'Employee registered successfully.',
         employeeId,
         employeeCode: employeeResult.rows[0].employee_code,
+        accountCreated: true,
+        welcomeEmailSent,
+        hrEmailSent,
       };
     } catch (error) {
-      await client.query('ROLLBACK');
+      // Roll back only if the transaction is still open.
+      // This avoids masking the original error if COMMIT already happened.
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // Ignore rollback errors and preserve the original error.
+      }
+
+      // Convert PostgreSQL duplicate-email errors into a readable API error.
+      if (error?.code === '23505' && String(error?.constraint ?? '').includes('email')) {
+        throw new BadRequestException(
+          'Email already exists. Please use another email.',
+        );
+      }
+
       throw error;
     } finally {
       client.release();
@@ -710,6 +771,40 @@ export class EmployeeService {
           normalizedEmployee.status,
           id,
         ],
+      );
+
+      // ==========================================
+      // UPDATE EMPLOYEE LOGIN EMAIL
+      // ==========================================
+
+      // Check whether another employee account uses this email.
+      const duplicateEmailResult = await client.query(
+        `
+        SELECT id
+        FROM employee_accounts
+        WHERE LOWER(email) = LOWER($1)
+          AND employee_id <> $2
+        LIMIT 1;
+        `,
+        [normalizedEmployee.email, id],
+      );
+
+      if (duplicateEmailResult.rows.length > 0) {
+        throw new BadRequestException(
+          'This email is already used by another employee account.',
+        );
+      }
+
+      // Update the existing login account for this employee.
+      await client.query(
+        `
+        UPDATE employee_accounts
+        SET
+          email = $1,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE employee_id = $2;
+        `,
+        [normalizedEmployee.email, id],
       );
 
       // ===========================

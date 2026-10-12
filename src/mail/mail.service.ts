@@ -8,19 +8,38 @@ import * as nodemailer from 'nodemailer';
 @Injectable()
 export class MailService {
   private readonly transporter;
+constructor() {
+  this.transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,// Prefer IPv4 to avoid the ENETUNREACH IPv6 connection error
+    auth: {
+      user: process.env.MAIL_USER,
+      pass: process.env.MAIL_PASSWORD,
+    },
+    connectionTimeout: 20000,
+    greetingTimeout: 20000,
+    socketTimeout: 30000,
+  });
+}
 
-  constructor() {
-    this.transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST,
-      port: Number(process.env.MAIL_PORT || 587),
-      secure: false,
+// Verify Gmail SMTP connection
+async verifyMailConnection() {
+  try {
+    await this.transporter.verify();
 
-      auth: {
-        user: process.env.MAIL_USER,
-        pass: process.env.MAIL_PASSWORD,
-      },
-    });
+    console.log('Gmail SMTP connection successful');
+
+    return {
+      success: true,
+      message: 'Gmail SMTP connection successful',
+    };
+  } catch (error) {
+    console.error('Gmail SMTP connection failed:', error);
+
+    throw error;
   }
+}
 
   // =========================================================
   // 1. EMPLOYEE CREATED - SEND WELCOME EMAIL
@@ -186,28 +205,39 @@ export class MailService {
         message: 'Welcome email sent successfully',
       };
     } catch (error) {
-      console.error(
-        'Welcome email sending failed:',
-        error,
-      );
+  console.error('Welcome email sending failed:', error);
 
-      throw new InternalServerErrorException(
-        'Employee account created, but welcome email could not be sent',
-      );
-    }
+  // Display the actual SMTP error in the backend terminal
+  const smtpError = error as Error & {
+    code?: string;
+    response?: string;
+    responseCode?: number;
+    command?: string;
+  };
+
+  console.error('SMTP error code:', smtpError.code);
+  console.error('SMTP response:', smtpError.response);
+  console.error('SMTP response code:', smtpError.responseCode);
+  console.error('SMTP command:', smtpError.command);
+
+  throw new InternalServerErrorException(
+    'Employee account created, but welcome email could not be sent',
+  );
+}
   }
-  async sendEmployeeCreatedHrMail(
-    employeeName: string,
-    employeeCode: string,
-    employeeEmail: string,
-  ) {
-    const hrEmail = process.env.HR_EMAIL;
+ async sendEmployeeCreatedHrMail(
+  employeeName: string,
+  employeeCode: string,
+  employeeEmail: string,
+) {
+  const hrEmail = process.env.HR_EMAIL;
 
-    if (!hrEmail) {
-      throw new Error('HR_EMAIL is missing in .env');
-    }
+  if (!hrEmail) {
+    throw new Error('HR_EMAIL is missing in .env');
+  }
 
-    await this.transporter.sendMail({
+  try {
+    const info = await this.transporter.sendMail({
       from: `"HR Department" <${process.env.MAIL_USER}>`,
       to: hrEmail,
       subject: 'Employee Created Successfully',
@@ -223,12 +253,26 @@ Employee Email: ${employeeEmail}
 
 Regards,
 HR Department
-    `,
+      `.trim(),
     });
 
-    console.log(`Employee creation email sent to HR: ${hrEmail}`);
-  }
+    console.log('HR email accepted by SMTP server.');
+    console.log('HR recipient:', hrEmail);
+    console.log('SMTP response:', info.response);
+    console.log('Accepted recipients:', info.accepted);
+    console.log('Rejected recipients:', info.rejected);
 
+    return {
+      success: true,
+      message: 'HR notification email submitted.',
+      accepted: info.accepted,
+      rejected: info.rejected,
+    };
+  } catch (error) {
+    console.error('HR email sending failed:', error);
+    throw error;
+  }
+}
   // =========================================================
   // 2. TEST GMAIL
   // =========================================================
