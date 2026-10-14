@@ -1,6 +1,7 @@
 import {
     Injectable,
     ConflictException,
+    BadRequestException,
 } from '@nestjs/common';
 import { DbService } from '../../db/db.service';
 
@@ -11,7 +12,7 @@ export class LeaveApplicationsService {
     async create(data: any) {
         const {
             employee_id,
-            leave_type_id,
+            leave_type_id: rawLeaveTypeId,
             from_date,
             to_date,
             reason,
@@ -19,13 +20,15 @@ export class LeaveApplicationsService {
             half_day_date = null,
         } = data;
 
+        const leave_type_id = Number(rawLeaveTypeId);
+
         // 1. Check required fields
         if (!employee_id) {
             throw new Error('Employee ID is required');
         }
 
-        if (!leave_type_id) {
-            throw new Error('Leave Type ID is required');
+        if (!Number.isInteger(leave_type_id) || leave_type_id <= 0) {
+            throw new BadRequestException('A valid leave_type_id is required');
         }
 
         if (!from_date || !to_date) {
@@ -321,13 +324,28 @@ export class LeaveApplicationsService {
     async update(id: number, data: any) {
         const {
             employee_id,
-            leave_type_id,
+            leave_type_id: rawLeaveTypeId,
             from_date,
             to_date,
             reason,
             is_half_day = false,
             half_day_date = null,
         } = data;
+
+        const leave_type_id = Number(rawLeaveTypeId);
+
+        if (!Number.isInteger(leave_type_id) || leave_type_id <= 0) {
+            throw new BadRequestException('A valid leave_type_id is required');
+        }
+
+        const leaveTypeResult = await this.db.query(
+            `SELECT id FROM leave_types WHERE id = $1`,
+            [leave_type_id],
+        );
+
+        if (leaveTypeResult.rows.length === 0) {
+            throw new BadRequestException(`Leave type with ID ${leave_type_id} not found`);
+        }
 
         const from = new Date(from_date);
         const to = new Date(to_date);

@@ -22,9 +22,14 @@ async create(data: any) {
     throw new Error('Employee ID is required');
   }
 
-  if (!leave_type_id) {
-    throw new Error('Leave Type ID is required');
-  }
+  if (
+  leave_type_id === undefined ||
+  leave_type_id === null ||
+  !Number.isInteger(Number(leave_type_id)) ||
+  Number(leave_type_id) <= 0
+) {
+  throw new Error('A valid Leave Type ID is required');
+}
 
   if (!leave_period_id) {
     throw new Error('Leave Period ID is required');
